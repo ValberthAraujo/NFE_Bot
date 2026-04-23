@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv lock *)",
+      "Bash(uv.exe lock *)",
+      "Bash(python -m uv lock)",
+      "Bash(~/.cargo/bin/uv lock *)",
+      "Bash(winget list *)",
+      "Bash(cmd.exe /c \"where uv 2>&1\")",
+      "Bash(cmd.exe /c \"where uv\")",
+      "Read(//c/Users/valdr/.local/bin//**)",
+      "Read(//c/Users/valdr/AppData/Roaming/uv//**)",
+      "Read(//c/Users/valdr/AppData/Local/uv/**)",
+      "Bash(/c/Users/valdr/AppData/Roaming/Python/Scripts/uv.exe sync *)",
+      "Bash(/c/Users/valdr/AppData/Roaming/Python/Scripts/uv.exe run *)"
+    ]
+  }
+}

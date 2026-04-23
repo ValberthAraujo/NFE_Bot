@@ -1,0 +1,13 @@
+.venv
+.vscode
+.build
+.dist
+.env
+__pycache__/
+*.pyc
+*.csv
+build/
+dist/
+*.egg-info/ 
+*.xlsx
+*.xslm
