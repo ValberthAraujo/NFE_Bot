@@ -86,7 +86,7 @@ O executável ficará em `dist/Bot de NF-e/`.
 
 ## Desenvolvimento e contribuição
 1. Ative o ambiente virtual e rode `python app/interface.py` para validar mudanças na UI.
-2. Utilize `pipenv run python -m pytest` (caso adicione testes) ou scripts equivalentes.
+2. Utilize `uv run python -m unittest discover tests` para rodar os testes unitários.
 3. Antes de submeter PRs/commits, valide:
    - `.env` não versionado (já listado em `.gitignore`).
    - Quebras de layout na interface PySide6/QML (`app/view/interface.qml`) ao tocar widgets.

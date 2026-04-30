@@ -96,12 +96,12 @@ class InterfaceBackend(QObject):
         if arquivo:
             self._set_dominio_path(arquivo)
 
-    @Slot(result=bool)
-    def executarDownload(self) -> bool:
+    @Slot(str, result=bool)
+    def executarDownload(self, token: str) -> bool:
         arquivo = selecionar_arquivo("Selecione o CSV com as chaves")
         if not arquivo:
             return False
-        executar_em_thread(obter_xml_nfe, arquivo)
+        executar_em_thread(obter_xml_nfe, arquivo, token)
         self._emit_message("Baixar NF-e", "Download iniciado em segundo plano.")
         return True
 

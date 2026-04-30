@@ -29,6 +29,9 @@ ApplicationWindow {
     title: "Bot de Notas Fiscais"
     color: "#050a30"
 
+    // ── Token da API (persistido durante a sessão) ────────────────────────────
+    property string apiToken: ""
+
     // ── Tokens de cor ──────────────────────────────────────────────────────────
     readonly property color colBg:           "#050a30"
     readonly property color colSidebar:      "#030720"
@@ -230,6 +233,29 @@ ApplicationWindow {
                                 Qt.formatDateTime(new Date(), "dd/MM/yyyy  hh:mm:ss")
                             Component.onCompleted: triggered()
                         }
+                    }
+
+                    Rectangle {
+                        width: 32; height: 32; radius: 8
+                        color: gearArea.containsMouse ? root.colAccentHover : "transparent"
+                        border.color: gearArea.containsMouse ? root.colAccentBorder : "transparent"
+                        border.width: 1
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "⚙"
+                            color: root.apiToken.length > 0 ? root.colAccent : root.colTextMuted
+                            font.pixelSize: 18
+                            opacity: gearArea.containsMouse ? 1.0 : 0.7
+                        }
+
+                        MouseArea {
+                            id: gearArea; anchors.fill: parent
+                            hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                            onClicked: configDialog.open()
+                        }
+
+                        Behavior on color { ColorAnimation { duration: 120 } }
                     }
                 }
 
@@ -459,32 +485,12 @@ ApplicationWindow {
             }
 
             Item { Layout.fillHeight: true }
-
-            Rectangle {
-                height: 34; Layout.fillWidth: true; radius: 8
-                color: acBtn.containsMouse ? root.colAccent : root.colAccentDim
-                border.color: root.colAccentBorder
-                border.width: acBtn.containsMouse ? 0 : 1
-
-                Label {
-                    anchors.centerIn: parent; text: "Executar"
-                    color: acBtn.containsMouse ? root.colText : root.colAccent
-                    font.pixelSize: 12; font.bold: true; font.letterSpacing: 0.8
-                }
-
-                MouseArea {
-                    id: acBtn; anchors.fill: parent
-                    hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                    onClicked: parent.parent.parent.parent.clicked()
-                }
-                Behavior on color { ColorAnimation { duration: 150 } }
-            }
         }
 
         MouseArea {
             id: acCard; anchors.fill: parent; hoverEnabled: true
-            propagateComposedEvents: true
-            onClicked: mouse.accepted = false
+            cursorShape: Qt.PointingHandCursor
+            onClicked: parent.clicked()
         }
 
         Behavior on color        { ColorAnimation { duration: 150 } }
@@ -593,13 +599,22 @@ ApplicationWindow {
 
             Rectangle {
                 Layout.fillWidth: true; height: 36; radius: 8
-                color: root.colAccentDim; border.color: root.colAccentBorder; border.width: 1
+                color: root.apiToken.length > 0 ? root.colAccentDim : Qt.rgba(1, 0.32, 0.32, 0.10)
+                border.color: root.apiToken.length > 0 ? root.colAccentBorder : Qt.rgba(1, 0.32, 0.32, 0.35)
+                border.width: 1
                 RowLayout {
                     anchors.fill: parent; anchors.margins: 10; spacing: 8
-                    Label { text: "ℹ"; color: root.colAccent; font.pixelSize: 14 }
                     Label {
-                        text: "Certifique-se de que o certificado digital está instalado."
-                        color: root.colTextMuted; font.pixelSize: 11; Layout.fillWidth: true
+                        text: root.apiToken.length > 0 ? "✓" : "!"
+                        color: root.apiToken.length > 0 ? root.colAccent : "#ff5252"
+                        font.pixelSize: 14; font.bold: true
+                    }
+                    Label {
+                        text: root.apiToken.length > 0
+                            ? "Token da API configurado."
+                            : "Token da API não configurado. Abra as Configurações (⚙)."
+                        color: root.apiToken.length > 0 ? root.colTextMuted : "#ff5252"
+                        font.pixelSize: 11; Layout.fillWidth: true; wrapMode: Text.WordWrap
                     }
                 }
             }
@@ -624,17 +639,168 @@ ApplicationWindow {
                 Rectangle {
                     width: 110; height: 36; radius: 8
                     color: dlConfirm.containsMouse ? "#3a55ff" : root.colAccent
+                    opacity: root.apiToken.length === 0 ? 0.45 : 1.0
                     Label { anchors.centerIn: parent; text: "Confirmar"; color: root.colText; font.pixelSize: 13; font.bold: true }
                     MouseArea {
                         id: dlConfirm; anchors.fill: parent
-                        hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                        hoverEnabled: true; cursorShape: root.apiToken.length > 0 ? Qt.PointingHandCursor : Qt.ForbiddenCursor
                         onClicked: {
-                            if (backend.executarDownload()) {
+                            if (root.apiToken.length === 0) {
+                                root.appendLog("AVISO", "Configure o token da API nas Configurações (⚙) antes de continuar.")
+                                return
+                            }
+                            if (backend.executarDownload(root.apiToken)) {
                                 root.appendLog("INFO", "Download de NF-e iniciado com sucesso.")
                                 downloadDialog.close()
                             } else {
                                 root.appendLog("ERRO", "Falha ao iniciar o download de NF-e.")
                             }
+                        }
+                    }
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                }
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  Dialog: Configurações
+    // ═══════════════════════════════════════════════════════════════════════════
+    Dialog {
+        id: configDialog
+        modal: true; standardButtons: DialogButtonBox.NoButton
+        width: 440
+        x: Math.round((parent.width  - width)  / 2)
+        y: Math.round((parent.height - height) / 2)
+
+        onOpened: cfgTokenField.text = root.apiToken
+
+        background: Rectangle {
+            color: root.colSidebar; radius: 16
+            border.color: root.colAccentBorder; border.width: 1
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 16
+
+            RowLayout {
+                spacing: 12
+                Rectangle {
+                    width: 42; height: 42; radius: 10
+                    color: root.colAccentDim; border.color: root.colAccentBorder; border.width: 1
+                    Text {
+                        anchors.centerIn: parent; text: "⚙"
+                        color: root.colAccent; font.pixelSize: 20
+                    }
+                }
+                ColumnLayout {
+                    spacing: 2
+                    Label { text: "Configurações";        color: root.colText;      font.pixelSize: 16; font.bold: true }
+                    Label { text: "Credenciais da API";   color: root.colTextMuted; font.pixelSize: 11 }
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; height: 1; color: root.colDivider }
+
+            ColumnLayout {
+                Layout.fillWidth: true; spacing: 6
+
+                Label {
+                    text: "Token da API MeuDanfe"
+                    color: root.colTextMuted; font.pixelSize: 12; font.bold: true; font.letterSpacing: 0.5
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true; height: 38; radius: 8
+                    color: root.colBg
+                    border.color: cfgTokenField.activeFocus ? root.colAccent : root.colDivider
+                    border.width: cfgTokenField.activeFocus ? 1.5 : 1
+
+                    RowLayout {
+                        anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 8; spacing: 6
+
+                        TextInput {
+                            id: cfgTokenField
+                            Layout.fillWidth: true
+                            height: parent.height
+                            verticalAlignment: TextInput.AlignVCenter
+                            color: root.colText; font.pixelSize: 12
+                            echoMode: cfgShowToken.checked ? TextInput.Normal : TextInput.Password
+                            clip: true
+
+                            Label {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Cole aqui o token da API…"
+                                color: root.colTextDim; font.pixelSize: 12
+                                visible: cfgTokenField.text.length === 0 && !cfgTokenField.activeFocus
+                            }
+                        }
+
+                        Rectangle {
+                            width: 26; height: 26; radius: 6
+                            color: eyeArea.containsMouse ? root.colAccentHover : "transparent"
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: cfgShowToken.checked ? "🙈" : "👁"
+                                font.pixelSize: 14
+                            }
+
+                            CheckBox {
+                                id: cfgShowToken
+                                anchors.fill: parent
+                                opacity: 0
+                                checked: false
+                            }
+
+                            MouseArea {
+                                id: eyeArea; anchors.fill: parent
+                                hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                onClicked: cfgShowToken.checked = !cfgShowToken.checked
+                            }
+                        }
+                    }
+
+                    Behavior on border.color { ColorAnimation { duration: 150 } }
+                }
+
+                Label {
+                    text: "O token é usado apenas para download de NF-e e não é salvo em disco."
+                    color: root.colTextDim; font.pixelSize: 10; font.italic: true
+                    wrapMode: Text.WordWrap; Layout.fillWidth: true
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true; spacing: 10
+                Item { Layout.fillWidth: true }
+
+                Rectangle {
+                    width: 100; height: 36; radius: 8
+                    color: cfgCancel.containsMouse ? root.colAccentDim : "transparent"
+                    border.color: root.colDivider; border.width: 1
+                    Label { anchors.centerIn: parent; text: "Cancelar"; color: root.colTextMuted; font.pixelSize: 13 }
+                    MouseArea {
+                        id: cfgCancel; anchors.fill: parent
+                        hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                        onClicked: configDialog.close()
+                    }
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                }
+
+                Rectangle {
+                    width: 110; height: 36; radius: 8
+                    color: cfgSave.containsMouse ? "#3a55ff" : root.colAccent
+                    Label { anchors.centerIn: parent; text: "Salvar"; color: root.colText; font.pixelSize: 13; font.bold: true }
+                    MouseArea {
+                        id: cfgSave; anchors.fill: parent
+                        hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.apiToken = cfgTokenField.text.trim()
+                            root.appendLog("INFO", root.apiToken.length > 0
+                                ? "Token da API configurado com sucesso."
+                                : "Token da API removido.")
+                            configDialog.close()
                         }
                     }
                     Behavior on color { ColorAnimation { duration: 120 } }

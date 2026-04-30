@@ -2,7 +2,6 @@ import os
 import requests
 import xmltodict
 
-from dotenv import load_dotenv
 from dataclasses import dataclass
 from typing import Any, List, Sequence, Union
 from app.model.ler_csv import ler_csv, importar_arquivo
@@ -146,13 +145,12 @@ def _extrair_dados_xml(xml_data: str) -> tuple[str | None, str | None, str | Non
     return cnpj_afetado, tipo_nota_nome, nome_empresa, id_infNFe, modelo_nf
 
 
-def consultar_nfe(chave_acesso_nfe: str) -> Union[Nfe, str]:
+def consultar_nfe(chave_acesso_nfe: str, token: str) -> Union[Nfe, str]:
     root_path = os.getcwd()
-    load_dotenv()
 
     headers = {
         "accept": "application/json",
-        "Api-Key": os.getenv("API_MEUDANFE"),
+        "Api-Key": token,
     }
     url_enviarcodigo = f"https://api.meudanfe.com.br/v2/fd/add/{chave_acesso_nfe}"
     url_pegarxml = f"https://api.meudanfe.com.br/v2/fd/get/xml/{chave_acesso_nfe}"
@@ -186,13 +184,13 @@ def consultar_nfe(chave_acesso_nfe: str) -> Union[Nfe, str]:
     )
 
 
-def obter_xml_nfe(caminho_planilha: str | None = None) -> Sequence[Union[Nfe, str]]:
+def obter_xml_nfe(caminho_planilha: str | None = None, token: str = "") -> Sequence[Union[Nfe, str]]:
     caminho = caminho_planilha or importar_arquivo()
     chaves = ler_csv(caminho)
 
     resultados: List[Union[Nfe, str]] = []
     for chave in chaves:
-        resultado = consultar_nfe(chave)
+        resultado = consultar_nfe(chave, token)
         resultados.append(resultado)
 
     return resultados
