@@ -1,10 +1,9 @@
-import tkinter as tk
-from tkinter import filedialog
 from pathlib import Path
 
 TIPO_NFE = "nfe"
 TIPO_NFC = "nfc"
 _DETECTION_ENCODINGS = ("utf-8-sig", "latin-1")
+
 
 def _parse_decimal(valor: str) -> float | None:
     """Converte valores em formato brasileiro para float."""
@@ -18,14 +17,13 @@ def _parse_decimal(valor: str) -> float | None:
     except ValueError:
         return None
 
-def _validar_fontes(caminho_dte: list, caminho_dominio: str) -> None:
-    faltantes = [
-        caminho.name for caminho in caminho_dte + [caminho_dominio] if not caminho.exists()
-    ]
+
+def _validar_fontes(caminhos_dte: list[Path], caminho_dominio: Path) -> None:
+    todos = caminhos_dte + [caminho_dominio]
+    faltantes = [c.name for c in todos if not c.exists()]
     if faltantes:
-        raise FileNotFoundError(
-            "Arquivos não localizados: " + ", ".join(faltantes)
-        )
+        raise FileNotFoundError("Arquivos não localizados: " + ", ".join(faltantes))
+
 
 def _ler_primeira_linha(caminho: Path) -> str:
     for encoding in _DETECTION_ENCODINGS:
@@ -49,16 +47,19 @@ def detectar_tipo_csv(caminho: Path | str) -> str | None:
         return TIPO_NFE
     return None
 
+
 def importar_arquivo() -> str:
+    # Import deferred to avoid loading tkinter at module level in a PySide6 app.
+    import tkinter as tk
+    from tkinter import filedialog
+
     root = tk.Tk()
     root.withdraw()
 
-    arquivo = filedialog.askopenfilename(
+    return filedialog.askopenfilename(
         title="Selecione um arquivo",
         filetypes=(
             ("Arquivos CSV", "*.csv"),
             ("Todos os arquivos", "*.*"),
         ),
     )
-
-    return arquivo

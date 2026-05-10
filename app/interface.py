@@ -5,6 +5,8 @@ import sys
 _BASE_DIR = Path(__file__).resolve().parent
 _PROJECT_DIR = _BASE_DIR.parent
 
+# Ensure both the project root and app/ are on sys.path so imports work
+# when running as a frozen PyInstaller bundle or directly as a script.
 for _path in (_PROJECT_DIR, _BASE_DIR):
     _path_str = str(_path)
     if _path_str not in sys.path:
@@ -15,8 +17,9 @@ from PySide6.QtWidgets import QApplication, QFileDialog
 from PySide6.QtQml import QQmlApplicationEngine
 from app.controller.consultar_nfe import obter_xml_nfe
 from app.controller.comparar_nfe import comparar_nfe as comparar_nfe_documentos
-from app.controller.comparar_nfc import comparar_nfe as comparar_nfc_documentos
+from app.controller.comparar_nfc import comparar_nfc as comparar_nfc_documentos
 from app.controller.utils import detectar_tipo_csv, TIPO_NFE, TIPO_NFC
+
 
 def resource_path(*relative_parts: str) -> Path:
     relative = Path(*relative_parts)
@@ -62,6 +65,12 @@ class InterfaceBackend(QObject):
     def _emit_message(self, titulo: str, mensagem: str) -> None:
         self.messageEmitted.emit(titulo, mensagem)
 
+    def _executar_protegido(self, funcao, *args) -> None:
+        try:
+            funcao(*args)
+        except Exception as exc:
+            self._emit_message("Erro", str(exc))
+
     def _set_dte_path(self, caminho: str) -> None:
         if self._dte_path != caminho:
             self._dte_path = caminho
@@ -101,7 +110,7 @@ class InterfaceBackend(QObject):
         arquivo = selecionar_arquivo("Selecione o CSV com as chaves")
         if not arquivo:
             return False
-        executar_em_thread(obter_xml_nfe, arquivo, token)
+        executar_em_thread(self._executar_protegido, obter_xml_nfe, arquivo, token)
         self._emit_message("Baixar NF-e", "Download iniciado em segundo plano.")
         return True
 
@@ -123,7 +132,7 @@ class InterfaceBackend(QObject):
             return False
 
         funcao = comparar_nfc_documentos if tipo_dte == TIPO_NFC else comparar_nfe_documentos
-        executar_em_thread(funcao, [caminho_dte], caminho_dominio)
+        executar_em_thread(self._executar_protegido, funcao, [caminho_dte], caminho_dominio)
         self._emit_message("Comparar Notas", "Comparação iniciada em segundo plano.")
         return True
 

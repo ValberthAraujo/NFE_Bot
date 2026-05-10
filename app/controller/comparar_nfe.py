@@ -1,43 +1,15 @@
-# Modulo para comparar NF-e
+from __future__ import annotations
+
 import csv
 import io
-import os
 import unicodedata
 from collections.abc import Iterator
 from pathlib import Path
 
 import pandas as pd
 
+from app.controller.utils import _parse_decimal, _validar_fontes
 from app.model.salvar_excel import salvar_relatorio
-
-
-def _parse_decimal(valor: str) -> float | None:
-    """Converte valores em formato brasileiro para float."""
-    if not valor:
-        return None
-
-    texto = (
-        valor.strip()
-        .replace(".", "")
-        .replace(",", ".")
-        .replace('"', "")
-    )
-
-    if not texto:
-        return None
-
-    try:
-        return round(float(texto), 2)
-    except ValueError:
-        return None
-
-
-def _validar_fontes(caminhos_dte: list[Path], caminho_dominio: Path) -> None:
-    todos = caminhos_dte + [caminho_dominio]
-    faltantes = [c.name for c in todos if not c.exists()]
-
-    if faltantes:
-        raise FileNotFoundError("Arquivos nao localizados: " + ", ".join(faltantes))
 
 
 def _abrir_csv(caminho: Path, delimiter: str = ",") -> Iterator[list[str]]:
@@ -59,7 +31,6 @@ def _abrir_csv(caminho: Path, delimiter: str = ",") -> Iterator[list[str]]:
 def _normalizar_texto(texto: str) -> str:
     if not texto:
         return ""
-
     texto = unicodedata.normalize("NFKD", texto)
     texto = "".join(ch for ch in texto if not unicodedata.combining(ch))
     return texto.lower().strip()
@@ -172,7 +143,6 @@ def carregar_dte(caminhos: list[Path]) -> pd.DataFrame:
 
 
 def carregar_dominio(caminho: Path) -> pd.DataFrame:
-    """Le Entradas.csv (Dominio) e retorna Nota x Valor agrupado."""
     registros: list[dict[str, object]] = []
 
     leitor = _abrir_csv(caminho, delimiter=";")
@@ -212,7 +182,7 @@ def carregar_dominio(caminho: Path) -> pd.DataFrame:
         )
 
     if not registros:
-        raise ValueError("Nenhum registro valido encontrado em Entradas.csv.")
+        raise ValueError("Nenhum cabecalho valido encontrado")
 
     df = pd.DataFrame(registros)
     agrupado = (
@@ -224,7 +194,6 @@ def carregar_dominio(caminho: Path) -> pd.DataFrame:
 
 
 def montar_cruzamento(dte: pd.DataFrame, dominio: pd.DataFrame) -> pd.DataFrame:
-    """Une as bases e indica diferencas."""
     cruzamento = dte.merge(
         dominio,
         how="outer",
@@ -250,7 +219,7 @@ def montar_cruzamento(dte: pd.DataFrame, dominio: pd.DataFrame) -> pd.DataFrame:
     return cruzamento.reset_index(drop=True)
 
 
-def comparar_nfe(caminhos_dte: list[str | Path], caminho_dominio: str | Path):
+def comparar_nfe(caminhos_dte: list[str | Path], caminho_dominio: str | Path) -> Path:
     caminhos_dte = [Path(c) for c in caminhos_dte]
     caminho_dominio = Path(caminho_dominio)
 
@@ -260,7 +229,7 @@ def comparar_nfe(caminhos_dte: list[str | Path], caminho_dominio: str | Path):
     dominio = carregar_dominio(caminho_dominio)
     cruzamento = montar_cruzamento(dte, dominio)
 
-    caminho_saida = Path(os.getcwd()) / "relatorio_cruzamento.xlsx"
+    caminho_saida = Path.cwd() / "Relatorio_Comparacao_NFe.xlsx"
     salvar_relatorio(cruzamento, caminho_saida)
 
     return caminho_saida
@@ -268,6 +237,6 @@ def comparar_nfe(caminhos_dte: list[str | Path], caminho_dominio: str | Path):
 
 if __name__ == "__main__":
     comparar_nfe(
-        caminhos_dte = [r"C:\Projetos\2_SimpleBot\DTE.csv"],
-        caminho_dominio= r"C:\Projetos\2_SimpleBot\Dominio.csv",
+        caminhos_dte=[r"C:\Projetos\2_SimpleBot\DTE.csv"],
+        caminho_dominio=r"C:\Projetos\2_SimpleBot\Dominio.csv",
     )
