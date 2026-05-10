@@ -1,29 +1,25 @@
 from __future__ import annotations
 
 import csv
-import os
-import sys
+import io
+import unicodedata
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Iterable
-from app.controller.utils import _parse_decimal, _validar_fontes
-from app.model.salvar_excel import salvar_relatorio
 
 import pandas as pd
 
-_APP_DIR = Path(__file__).resolve().parents[2]
-_PROJECT_DIR = _APP_DIR.parent
+from app.controller.utils import _parse_decimal, _validar_fontes
+from app.model.salvar_excel import salvar_relatorio
 
-for _path in (_PROJECT_DIR, _APP_DIR):
-    _path_str = str(_path)
-    if _path_str not in sys.path:
-        sys.path.insert(0, _path_str)
-
+# Fixed column layout for the NFC DTE CSV (no column headers, positional).
 DTE_COLUMN_CHAVE = 0
 DTE_COLUMN_NUMERO = 5
 DTE_COLUMN_VALOR = 10
 
 DOMINIO_COLUMN_NUMERO = 4
 DOMINIO_COLUMN_VALOR = 20
+
 ENCODINGS = ("utf-8-sig", "latin-1")
 
 
@@ -57,30 +53,33 @@ def carregar_dte(caminhos: Iterable[Path | str] | Path | str) -> pd.DataFrame:
             continue
 
         for encoding in ENCODINGS:
-            with caminho.open(encoding=encoding) as fonte:
-                leitor = csv.reader(fonte)
-                for linha in leitor:
-                    chave = _obter_coluna(linha, DTE_COLUMN_CHAVE).replace('"', "")
-                    if len(chave) < 20:
-                        continue
+            try:
+                with caminho.open(encoding=encoding) as fonte:
+                    leitor = csv.reader(fonte)
+                    for linha in leitor:
+                        chave = _obter_coluna(linha, DTE_COLUMN_CHAVE).replace('"', "")
+                        if len(chave) < 20:
+                            continue
 
-                    numero = _extrair_numero_documento(
-                        _obter_coluna(linha, DTE_COLUMN_NUMERO)
-                    )
-                    valor = _parse_decimal(_obter_coluna(linha, DTE_COLUMN_VALOR))
+                        numero = _extrair_numero_documento(
+                            _obter_coluna(linha, DTE_COLUMN_NUMERO)
+                        )
+                        valor = _parse_decimal(_obter_coluna(linha, DTE_COLUMN_VALOR))
 
-                    if numero is None or valor is None:
-                        continue
+                        if numero is None or valor is None:
+                            continue
 
-                    registros.append(
-                        {
-                            "Arquivo DTE": caminho.name,
-                            "Nota DTE": numero,
-                            "Valor DTE": valor,
-                            "Chave de Acesso": chave.replace('"', ""),
-                        }
-                    )
-            break
+                        registros.append(
+                            {
+                                "Arquivo DTE": caminho.name,
+                                "Nota DTE": numero,
+                                "Valor DTE": valor,
+                                "Chave de Acesso": chave,
+                            }
+                        )
+                break
+            except UnicodeDecodeError:
+                continue
 
     df = pd.DataFrame(registros)
 
@@ -134,7 +133,7 @@ def carregar_dominio(caminho: Path | str) -> pd.DataFrame:
                     registros.append(
                         {
                             "Nota Dominio": numero,
-                            "Valor Contábil Dominio": valor,
+                            "Valor Contabil Dominio": valor,
                         }
                     )
             break
@@ -143,7 +142,7 @@ def carregar_dominio(caminho: Path | str) -> pd.DataFrame:
 
     df = pd.DataFrame(registros)
     agrupado = (
-        df.groupby("Nota Dominio", as_index=False)["Valor Contábil Dominio"]
+        df.groupby("Nota Dominio", as_index=False)["Valor Contabil Dominio"]
         .sum()
         .round(2)
     )
@@ -158,22 +157,22 @@ def montar_cruzamento(dte: pd.DataFrame, dominio: pd.DataFrame) -> pd.DataFrame:
         right_on="Nota Dominio",
     ).sort_values(["Nota DTE", "Nota Dominio", "Chave de Acesso"])
 
-    cruzamento["Valor Contábil Dominio"] = pd.to_numeric(
-        cruzamento.get("Valor Contábil Dominio"), errors="coerce"
+    cruzamento["Valor Contabil Dominio"] = pd.to_numeric(
+        cruzamento.get("Valor Contabil Dominio"), errors="coerce"
     )
     cruzamento["Valor DTE"] = pd.to_numeric(cruzamento.get("Valor DTE"), errors="coerce")
 
-    cruzamento["Diferença (Domínio - DTE)"] = (
-        cruzamento["Valor Contábil Dominio"].fillna(0)
+    cruzamento["Diferenca (Dominio - DTE)"] = (
+        cruzamento["Valor Contabil Dominio"].fillna(0)
         - cruzamento["Valor DTE"].fillna(0)
     ).round(2)
 
     def _classificar(row: pd.Series) -> str:
-        if pd.isna(row["Valor Contábil Dominio"]):
+        if pd.isna(row["Valor Contabil Dominio"]):
             return "Somente DTE"
         if pd.isna(row["Valor DTE"]):
-            return "Somente Domínio"
-        if abs(row["Diferença (Domínio - DTE)"]) < 0.01:
+            return "Somente Dominio"
+        if abs(row["Diferenca (Dominio - DTE)"]) < 0.01:
             return "Valores iguais"
         return "Valores divergentes"
 
@@ -181,10 +180,10 @@ def montar_cruzamento(dte: pd.DataFrame, dominio: pd.DataFrame) -> pd.DataFrame:
     return cruzamento.reset_index(drop=True)
 
 
-def comparar_nfe(
+def comparar_nfc(
     caminhos_dte: Iterable[Path | str] | Path | str,
     caminho_dominio: Path | str,
-) -> None:
+) -> Path:
     caminhos_dte = _forcar_lista_caminhos(caminhos_dte)
     caminho_dominio = Path(caminho_dominio)
 
@@ -200,22 +199,22 @@ def comparar_nfe(
         "Valor DTE",
         "Chave de Acesso",
         "Nota Dominio",
-        "Valor Contábil Dominio",
-        "Diferença (Domínio - DTE)",
+        "Valor Contabil Dominio",
+        "Diferenca (Dominio - DTE)",
         "Status",
     ]
     presentes = [col for col in ordem_colunas if col in cruzamento.columns]
     restantes = [col for col in cruzamento.columns if col not in presentes]
     cruzamento = cruzamento[presentes + restantes]
 
-    destino = Path(os.getcwd()) / "Relatorio_Comparacao_NFe.xlsx"
+    destino = Path.cwd() / "Relatorio_Comparacao_NFc.xlsx"
     salvar_relatorio(cruzamento, destino)
+    return destino
+
 
 if __name__ == "__main__":
     base_app = "C:/Projetos/2_SimpleBot/"
-    comparar_nfe(
-        caminhos_dte=[
-            base_app + "DTE.csv",
-        ],
+    comparar_nfc(
+        caminhos_dte=[base_app + "DTE.csv"],
         caminho_dominio=base_app + "Dominio.csv",
     )

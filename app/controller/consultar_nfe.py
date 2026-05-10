@@ -1,13 +1,17 @@
-import os
 import requests
 import xmltodict
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, List, Sequence, Union
-from app.model.ler_csv import ler_csv, importar_arquivo
+
+from app.model.ler_csv import ler_csv
+from app.controller.utils import importar_arquivo
 
 
 PASTA_UNICA_NOTAS = "Notas Fiscais"
+_URL_ENVIAR = "https://api.meudanfe.com.br/v2/fd/add/{chave}"
+_URL_PEGAR_XML = "https://api.meudanfe.com.br/v2/fd/get/xml/{chave}"
 
 
 @dataclass
@@ -98,7 +102,6 @@ def _detectar_modelo_nf(inf_nfe: dict[str, Any]) -> str | None:
 
 
 def _extrair_dados_xml(xml_data: str) -> tuple[str | None, str | None, str | None, str | None, str | None]:
-
     nome_empresa: str | None = None
     tipo_nota: str | None = None
     cnpj_afetado: str | None = None
@@ -111,10 +114,12 @@ def _extrair_dados_xml(xml_data: str) -> tuple[str | None, str | None, str | Non
 
     if not isinstance(inf_nfe, dict):
         return cnpj_afetado, tipo_nota_nome, nome_empresa, id_infNFe, modelo_nf
+
+    # id_attr must be resolved before use
+    id_attr = inf_nfe.get("@Id") or inf_nfe.get("Id")
     if isinstance(id_attr, str):
         id_infNFe = id_attr
 
-    id_attr = inf_nfe.get("@Id") or inf_nfe.get("Id")
     modelo_nf = _detectar_modelo_nf(inf_nfe)
     ide = inf_nfe.get("ide") or {}
     tp_nf = ide.get("tpNF")
@@ -145,43 +150,60 @@ def _extrair_dados_xml(xml_data: str) -> tuple[str | None, str | None, str | Non
     return cnpj_afetado, tipo_nota_nome, nome_empresa, id_infNFe, modelo_nf
 
 
-def consultar_nfe(chave_acesso_nfe: str, token: str) -> Union[Nfe, str]:
-    root_path = os.getcwd()
+def consultar_nfe(chave_acesso_nfe: str, token: str) -> Union["Nfe", str]:
+    try:
+        root_path = Path.cwd()
 
-    headers = {
-        "accept": "application/json",
-        "Api-Key": token,
-    }
-    url_enviarcodigo = f"https://api.meudanfe.com.br/v2/fd/add/{chave_acesso_nfe}"
-    url_pegarxml = f"https://api.meudanfe.com.br/v2/fd/get/xml/{chave_acesso_nfe}"
+        headers = {
+            "accept": "application/json",
+            "Api-Key": token,
+        }
 
-    requests.put(url_enviarcodigo, headers=headers, timeout=30)
-    response = requests.get(url_pegarxml, headers=headers, timeout=30)
+        requests.put(
+            _URL_ENVIAR.format(chave=chave_acesso_nfe),
+            headers=headers,
+            timeout=30,
+        )
+        response = requests.get(
+            _URL_PEGAR_XML.format(chave=chave_acesso_nfe),
+            headers=headers,
+            timeout=30,
+        )
+        response.raise_for_status()
 
-    data = response.json()
-    xml_data = data.get("data")
+        data = response.json()
+        xml_data: str | None = data.get("data")
 
-    cnpj, tipo_nota, nome_empresa, id_infNFe, modelo_nf = _extrair_dados_xml(xml_data)
+        if not xml_data:
+            return f"Chave {chave_acesso_nfe}: resposta da API não contém XML."
 
-    pasta_empresa = PASTA_UNICA_NOTAS
-    pasta_tipo = tipo_nota
+        cnpj, tipo_nota, nome_empresa, id_infNFe, modelo_nf = _extrair_dados_xml(xml_data)
 
-    os.makedirs(os.path.join(root_path, pasta_empresa, pasta_tipo), exist_ok=True)
+        pasta_empresa = PASTA_UNICA_NOTAS
+        pasta_tipo = tipo_nota or "Outros"
 
-    caminho_xml = os.path.join(root_path, pasta_empresa, pasta_tipo, f"NFE-{chave_acesso_nfe}.xml")
+        pasta_destino = root_path / pasta_empresa / pasta_tipo
+        pasta_destino.mkdir(parents=True, exist_ok=True)
 
-    with open(caminho_xml, "w", encoding="utf-8") as arquivo_xml:
-        arquivo_xml.write(xml_data)
+        caminho_xml = pasta_destino / f"NFE-{chave_acesso_nfe}.xml"
+        caminho_xml.write_text(xml_data, encoding="utf-8")
 
-    return Nfe(
-        chave_acesso=chave_acesso_nfe,
-        cnpj=cnpj,
-        xml=xml_data,
-        nome_empresa=nome_empresa,
-        tipo_nota=tipo_nota,
-        id=id_infNFe,
-        modelo_nf=modelo_nf,
-    )
+        return Nfe(
+            chave_acesso=chave_acesso_nfe,
+            cnpj=cnpj,
+            xml=xml_data,
+            nome_empresa=nome_empresa,
+            tipo_nota=tipo_nota,
+            id=id_infNFe,
+            modelo_nf=modelo_nf,
+        )
+
+    except requests.RequestException as exc:
+        return f"Chave {chave_acesso_nfe}: erro de rede — {exc}"
+    except ValueError as exc:
+        return f"Chave {chave_acesso_nfe}: resposta inválida — {exc}"
+    except Exception as exc:
+        return f"Chave {chave_acesso_nfe}: erro inesperado — {exc}"
 
 
 def obter_xml_nfe(caminho_planilha: str | None = None, token: str = "") -> Sequence[Union[Nfe, str]]:
